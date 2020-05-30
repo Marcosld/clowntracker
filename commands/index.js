@@ -56,7 +56,7 @@ const wastedToday = () => {
     )
     .then(
       (secondsPlayed) =>
-        `The clown has played ${Math.floor(
+        `The clown has wasted ${Math.floor(
           secondsPlayed / 3600
         )} hours, ${Math.floor(
           (secondsPlayed % 3600) / 60
