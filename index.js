@@ -22,7 +22,7 @@ const bot = new Telegraf(env.get("TELEGRAM_KEY"));
 
 bot.start(({ reply }) =>
   reply(
-    `This is the Clown tracker. Whenever you are feeling down or thinking that you are wasting your life, swing by and get a glimpse of the Clown's last moves on the Summoners Rift.\n\n` +
+    `This is the Clown tracker. Whenever you are feeling down or thinking that you are wasting your life, swing by and get a glimpse of the Clown's latest moves on the Summoners Rift.\n\n` +
       getCommandsHelp()
   )
 );
