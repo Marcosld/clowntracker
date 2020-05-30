@@ -12,24 +12,18 @@ const getEndPoint = ((apiKey) => (name, params) =>
       `https://euw1.api.riotgames.com/lol/match/v4/matches/${params.gameId}?api_key=${apiKey}`,
   }[name]()))(env.get("API_KEY"));
 
-/**
- * Returns whether the clown is playing or not
- * @returns {void | Promise<any> | *}
- */
+// Returns whether the clown is playing or not
 const clownStatus = () => {
   return fetch(getEndPoint("activeGame"))
     .then((res) =>
       res.ok
         ? "The Clown is down into the Summoner's Rift deeps"
-        : "The clown is just getting ready for the next game"
+        : "The Clown is just getting ready for the next game"
     )
     .catch(() => "clown not found");
 };
 
-/**
- * Returns the amount of time wasted by the clown today
- * @returns {void | Promise<any> | *}
- */
+// Returns the amount of time wasted by the clown today
 const wastedToday = () => {
   const isTodayMatch = ({ timestamp }) =>
     moment(timestamp).isAfter(
@@ -56,7 +50,7 @@ const wastedToday = () => {
     )
     .then(
       (secondsPlayed) =>
-        `The clown has wasted ${Math.floor(
+        `The Clown has wasted ${Math.floor(
           secondsPlayed / 3600
         )} hours, ${Math.floor(
           (secondsPlayed % 3600) / 60
