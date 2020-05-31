@@ -1,22 +1,102 @@
 const fetch = require("node-fetch");
 const env = require("../utils/env");
 const moment = require("moment");
+const cache = require("../cache");
 
-const getEndPoint = ((apiKey) => (name, params) =>
+const AVG_QUEUE_TIME = 8 * 60;
+const TWO_WEEKS = 60 * 60 * 24 * 15;
+
+let numberOfRequests = 0;
+
+setInterval(() => {
+  numberOfRequests = 0;
+}, 1500);
+
+const getEndpointData = (endPoint) => {
+  numberOfRequests++;
+  if (numberOfRequests < 20) {
+    return fetch(endPoint).then((res) => {
+      if (res.ok) {
+        return res.json();
+      }
+      throw Error("Overclown");
+    });
+  }
+  return new Promise((resolve, reject) => {
+    setTimeout(() => {
+      numberOfRequests++;
+      fetch(endPoint).then((res) => {
+        if (res.ok) {
+          resolve(res.json());
+        }
+        reject("Overclown");
+      });
+    }, Math.floor(numberOfRequests / 20) * 1500);
+  });
+};
+
+const cacheFirst = (url, id, TTL) =>
+  cache.has(id)
+    ? Promise.resolve(cache.get(id))
+    : getEndpointData(url).then((json) => {
+        cache.set(id, json, TTL);
+        return json;
+      });
+
+const getCacheable = (name, params) =>
   ({
-    activeGame: () =>
-      `https://euw1.api.riotgames.com/lol/spectator/v4/active-games/by-summoner/-8jXrz2RovRy1e3jKvKu1ZMq-5rcQFVH7GBhQI37H5GaflY?api_key=${apiKey}`,
-    lastGames: () =>
-      `https://euw1.api.riotgames.com/lol/match/v4/matchlists/by-account/CUY7rHRMe8I4YahIvbRozcmltQZ-aYuDsGSgwckmxuXTmA?api_key=${apiKey}`,
     gameInfo: () =>
-      `https://euw1.api.riotgames.com/lol/match/v4/matches/${params.gameId}?api_key=${apiKey}`,
-  }[name]()))(env.get("API_KEY"));
+      cacheFirst(
+        `https://euw1.api.riotgames.com/lol/match/v4/matches/${
+          params.gameId
+        }?api_key=${env.get("API_KEY")}`,
+        params.gameId,
+        TWO_WEEKS
+      ),
+    activeGame: () =>
+      cacheFirst(
+        `https://euw1.api.riotgames.com/lol/spectator/v4/active-games/by-summoner/-8jXrz2RovRy1e3jKvKu1ZMq-5rcQFVH7GBhQI37H5GaflY?api_key=${env.get(
+          "API_KEY"
+        )}`,
+        "activeGame"
+      ),
+    lastGames: () =>
+      cacheFirst(
+        `https://euw1.api.riotgames.com/lol/match/v4/matchlists/by-account/CUY7rHRMe8I4YahIvbRozcmltQZ-aYuDsGSgwckmxuXTmA?api_key=${env.get(
+          "API_KEY"
+        )}&beginIndex=${params.beginIndex}`,
+        `lastGames-${params.beginIndex}`
+      ),
+  }[name]());
+
+const getGamesUntil = async (conditionFn, games = []) => {
+  const gamesJSON = [
+    ...games,
+    ...(await getCacheable("lastGames", { beginIndex: games.length })).matches,
+  ];
+  if (conditionFn(gamesJSON[gamesJSON.length - 1])) {
+    return getGamesUntil(conditionFn, gamesJSON);
+  }
+  return Promise.resolve(gamesJSON.filter(conditionFn))
+    .then((matches) => {
+      return Promise.all(
+        matches.map(({ gameId }) => getCacheable("gameInfo", { gameId }))
+      );
+    })
+    .then((matchesInfo) => [
+      matchesInfo.reduce(
+        (sum, { gameDuration }) => sum + gameDuration + AVG_QUEUE_TIME,
+        0
+      ),
+      matchesInfo.length,
+    ]);
+};
 
 // Returns whether the clown is playing or not
 const clownStatus = () => {
-  return fetch(getEndPoint("activeGame"))
+  return getCacheable("activeGame")
     .then((res) =>
-      res.ok
+      res.gameId
         ? "The Clown is down into the Summoner's Rift deeps"
         : "The Clown is just getting ready for the next game"
     )
@@ -25,42 +105,55 @@ const clownStatus = () => {
 
 // Returns the amount of time wasted by the clown today
 const wastedToday = () => {
-  const isTodayMatch = ({ timestamp }) =>
-    moment(timestamp).isAfter(
-      moment()
-        .subtract(moment().hour() < 8 ? 1 : 0, "days")
-        .hour(8)
-    );
+  const today = moment()
+    .subtract(moment().hour() < 8 ? 1 : 0, "days")
+    .hour(8);
+  const isTodayMatch = ({ timestamp }) => moment(timestamp).isAfter(today);
 
-  return fetch(getEndPoint("lastGames"))
-    .then((res) => res.json())
-    .then((body) => body.matches.filter(isTodayMatch))
-    .then((todayMatches) => {
-      return Promise.all(
-        todayMatches.map(({ gameId }) =>
-          fetch(getEndPoint("gameInfo", { gameId }))
-        )
-      );
-    })
-    .then((todayMatchesInfoGZip) =>
-      Promise.all(todayMatchesInfoGZip.map((matchInfo) => matchInfo.json()))
-    )
-    .then((todayMatchesInfo) =>
-      todayMatchesInfo.reduce((sum, { gameDuration }) => sum + gameDuration, 0)
-    )
+  return getGamesUntil(isTodayMatch)
     .then(
-      (secondsPlayed) =>
+      ([secondsPlayed, numberOfGames]) =>
         `The Clown has wasted ${Math.floor(
           secondsPlayed / 3600
         )} hours, ${Math.floor(
           (secondsPlayed % 3600) / 60
         )} minutes and ${Math.floor(
           (secondsPlayed % 3600) % 60
-        )} seconds today!`
+        )} seconds today, divided among ${numberOfGames} juicy games!`
+    )
+    .catch(
+      () =>
+        "The Clown has played too many games. Server is flooded. Try again later."
+    );
+};
+
+// Returns the amount of time wasted by the clown this week
+const wastedThisWeek = () => {
+  const monday =
+    moment().day() === 1 && moment().hour() < 8
+      ? moment().subtract(7, "days").hour(8)
+      : moment().day(1).hour(8);
+  const isThisWeekMatch = ({ timestamp }) => moment(timestamp).isAfter(monday);
+
+  return getGamesUntil(isThisWeekMatch)
+    .then(
+      ([secondsPlayed, numberOfGames]) =>
+        `The Clown has wasted ${Math.floor(
+          secondsPlayed / 3600
+        )} hours, ${Math.floor(
+          (secondsPlayed % 3600) / 60
+        )} minutes and ${Math.floor(
+          (secondsPlayed % 3600) % 60
+        )} seconds this week, divided among ${numberOfGames} juicy games!`
+    )
+    .catch(
+      () =>
+        "The Clown has played too many games. Server is flooded. Try again later."
     );
 };
 
 module.exports = {
   clownStatus,
   wastedToday,
+  wastedThisWeek,
 };
