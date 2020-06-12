@@ -16,7 +16,7 @@ const getEndpointData = (endPoint) => {
   numberOfRequests++;
   if (numberOfRequests < 20) {
     return fetch(endPoint).then((res) => {
-      if (res.ok) {
+      if (res.ok || res.status === 404) {
         return res.json();
       }
       throw Error("Overclown");
@@ -55,14 +55,14 @@ const getCacheable = (name, params) =>
       ),
     activeGame: () =>
       cacheFirst(
-        `https://euw1.api.riotgames.com/lol/spectator/v4/active-games/by-summoner/-8jXrz2RovRy1e3jKvKu1ZMq-5rcQFVH7GBhQI37H5GaflY?api_key=${env.get(
+        `https://euw1.api.riotgames.com/lol/spectator/v4/active-games/by-summoner/2bRSuQ7DOyIecJfUjhzWikBuG-0WykG-JJq02cJowfEMxg0?api_key=${env.get(
           "API_KEY"
         )}`,
         "activeGame"
       ),
     lastGames: () =>
       cacheFirst(
-        `https://euw1.api.riotgames.com/lol/match/v4/matchlists/by-account/CUY7rHRMe8I4YahIvbRozcmltQZ-aYuDsGSgwckmxuXTmA?api_key=${env.get(
+        `https://euw1.api.riotgames.com/lol/match/v4/matchlists/by-account/L9Mv0MhyW8AakRctaI6n_Io6AMZ5bUIBV_1A9nie71cDpA?api_key=${env.get(
           "API_KEY"
         )}&beginIndex=${params.beginIndex}`,
         `lastGames-${params.beginIndex}`
